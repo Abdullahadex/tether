@@ -4,8 +4,6 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useTether } from "@/hooks/useTether";
-import { usePresence } from "@/hooks/usePresence";
-import { useHeartbeat } from "@/hooks/useHeartbeat";
 import ColorPicker from "@/components/ColorPicker";
 import PulseButton from "@/components/PulseButton";
 import PairScreen from "@/components/PairScreen";
@@ -16,27 +14,27 @@ const Index = () => {
   const { user, loading: authLoading, signOut } = useAuth();
   const navigate = useNavigate();
 
-  useEffect(() => {
-    if (!authLoading && !user) navigate("/auth");
-  }, [authLoading, user, navigate]);
-
   const {
     tether,
     myProfile,
     partnerProfile,
     loading: tetherLoading,
     isPaired,
-    createTether,
-    joinTether,
+    isPartnerOnline,
+    isPartnerHolding,
+    sendHeartbeat,
     updateSignatureColor,
     updateStatus,
+    createTether,
+    joinTether,
     fetchTether,
   } = useTether();
 
-  const presence = usePresence(isPaired ? tether?.pair_code : null);
-  const heartbeat = useHeartbeat(isPaired ? tether?.pair_code : null);
-
   const [showColorPicker, setShowColorPicker] = useState(false);
+
+  useEffect(() => {
+    if (!authLoading && !user) navigate("/auth");
+  }, [authLoading, user, navigate]);
 
   useEffect(() => {
     if (myProfile && myProfile.signature_color === "#53B8E8" && !localStorage.getItem("tether_color_set")) {
@@ -44,33 +42,26 @@ const Index = () => {
     }
   }, [myProfile]);
 
-  const handleColorSelected = async (color: { name: string; hsl: string; hex: string }) => {
+  const handleColorSelected = async (color: { hex: string }) => {
     await updateSignatureColor(color.hex);
     localStorage.setItem("tether_color_set", "true");
     setShowColorPicker(false);
   };
 
-  useEffect(() => {
-    if (tether && !isPaired) {
-      const interval = setInterval(() => fetchTether(), 3000);
-      return () => clearInterval(interval);
-    }
-  }, [tether, isPaired, fetchTether]);
-
   const sendNudge = useCallback(async () => {
-    if (presence.partnerOnline) return;
+    if (isPartnerOnline) return;
     try {
       await supabase.functions.invoke("send-nudge");
     } catch (e) {
-      // silently fail
+      // Silently fail
     }
-  }, [presence.partnerOnline]);
+  }, [isPartnerOnline]);
 
   if (authLoading || tetherLoading) {
     return (
-      <div className="fixed inset-0 bg-background flex items-center justify-center">
+      <div className="fixed inset-0 bg-[#050505] flex items-center justify-center">
         <motion.div
-          className="w-8 h-8 rounded-full border-2 border-foreground/20 border-t-foreground/60"
+          className="w-8 h-8 rounded-full border-2 border-white/20 border-t-white/60"
           animate={{ rotate: 360 }}
           transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
         />
@@ -81,11 +72,11 @@ const Index = () => {
   if (!user) return null;
 
   return (
-    <div className="fixed inset-0 bg-background overflow-hidden">
+    <div className="fixed inset-0 bg-[#050505] overflow-hidden">
       <AnimatePresence mode="wait">
         {showColorPicker ? (
           <ColorPicker key="picker" onColorSelected={handleColorSelected} />
-        ) : !tether || !isPaired ? (
+        ) : !isPaired ? (
           <PairScreen
             key="pair"
             onCreateTether={createTether}
@@ -102,17 +93,16 @@ const Index = () => {
             <AuraBackground
               myColor={myProfile?.signature_color || "#53B8E8"}
               partnerColor={partnerProfile?.signature_color || null}
-              partnerOnline={presence.partnerOnline}
-              bothOnline={presence.bothOnline}
-              synced={heartbeat.synced}
+              partnerOnline={isPartnerOnline}
             />
 
             <div className="relative z-10 flex flex-col items-center">
               <PulseButton
                 signatureColor={myProfile?.signature_color || "#53B8E8"}
+                isPartnerHolding={isPartnerHolding}
+                onHoldStart={() => sendHeartbeat(true)}
+                onHoldEnd={() => sendHeartbeat(false)}
                 onTap={sendNudge}
-                onHoldStart={heartbeat.startHold}
-                onHoldEnd={heartbeat.endHold}
               />
 
               <EphemeralStatus
@@ -122,28 +112,11 @@ const Index = () => {
                 partnerStatusSetAt={partnerProfile?.status_set_at}
                 onUpdateStatus={updateStatus}
               />
-
-              <AnimatePresence>
-                {presence.partnerOnline && (
-                  <motion.div
-                    className="mt-8 flex items-center gap-2"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 0.5 }}
-                    exit={{ opacity: 0 }}
-                  >
-                    <div
-                      className="w-1.5 h-1.5 rounded-full"
-                      style={{ backgroundColor: partnerProfile?.signature_color || "#53B8E8" }}
-                    />
-                    <span className="text-muted-foreground text-[10px] tracking-wider">here</span>
-                  </motion.div>
-                )}
-              </AnimatePresence>
             </div>
 
             <button
               onClick={signOut}
-              className="fixed bottom-6 text-muted-foreground/30 text-[10px] hover:text-muted-foreground/50 transition-colors"
+              className="fixed bottom-6 text-white/10 text-[10px] hover:text-white/30 transition-colors uppercase tracking-widest"
             >
               sign out
             </button>
