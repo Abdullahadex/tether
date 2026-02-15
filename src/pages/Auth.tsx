@@ -19,16 +19,28 @@ const Auth = () => {
     setMessage("");
     setLoading(true);
 
-    if (isSignUp) {
-      const { error } = await signUp(email, password);
-      if (error) setError(error.message);
-      else setMessage("Check your email to confirm your account");
-    } else {
-      const { error } = await signIn(email, password);
-      if (error) setError(error.message);
-      else navigate("/");
+    try {
+      if (isSignUp) {
+        const { error, data } = await signUp(email, password);
+        if (error) {
+          setError(error.message);
+        } else if (data?.user) {
+          // No email confirm needed, so we go straight in
+          navigate("/"); 
+        }
+      } else {
+        const { error } = await signIn(email, password);
+        if (error) {
+          setError(error.message);
+        } else {
+          navigate("/");
+        }
+      }
+    } catch (err: any) {
+      setError("An unexpected error occurred");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   return (
@@ -63,7 +75,7 @@ const Auth = () => {
             className="w-full bg-secondary/50 border border-border rounded-lg px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-foreground/30 transition-colors"
           />
 
-          <AnimatePresence>
+          <AnimatePresence mode="wait">
             {error && (
               <motion.p
                 className="text-destructive text-xs text-center"
