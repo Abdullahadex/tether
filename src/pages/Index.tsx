@@ -1,0 +1,157 @@
+import { useState, useEffect, useCallback } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { AnimatePresence, motion } from "framer-motion";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
+import { useTether } from "@/hooks/useTether";
+import { usePresence } from "@/hooks/usePresence";
+import { useHeartbeat } from "@/hooks/useHeartbeat";
+import ColorPicker from "@/components/ColorPicker";
+import PulseButton from "@/components/PulseButton";
+import PairScreen from "@/components/PairScreen";
+import AuraBackground from "@/components/AuraBackground";
+import EphemeralStatus from "@/components/EphemeralStatus";
+
+const Index = () => {
+  const { user, loading: authLoading, signOut } = useAuth();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!authLoading && !user) navigate("/auth");
+  }, [authLoading, user, navigate]);
+
+  const {
+    tether,
+    myProfile,
+    partnerProfile,
+    loading: tetherLoading,
+    isPaired,
+    createTether,
+    joinTether,
+    updateSignatureColor,
+    updateStatus,
+    fetchTether,
+  } = useTether();
+
+  const presence = usePresence(isPaired ? tether?.pair_code : null);
+  const heartbeat = useHeartbeat(isPaired ? tether?.pair_code : null);
+
+  const [showColorPicker, setShowColorPicker] = useState(false);
+
+  useEffect(() => {
+    if (myProfile && myProfile.signature_color === "#53B8E8" && !localStorage.getItem("tether_color_set")) {
+      setShowColorPicker(true);
+    }
+  }, [myProfile]);
+
+  const handleColorSelected = async (color: { name: string; hsl: string; hex: string }) => {
+    await updateSignatureColor(color.hex);
+    localStorage.setItem("tether_color_set", "true");
+    setShowColorPicker(false);
+  };
+
+  useEffect(() => {
+    if (tether && !isPaired) {
+      const interval = setInterval(() => fetchTether(), 3000);
+      return () => clearInterval(interval);
+    }
+  }, [tether, isPaired, fetchTether]);
+
+  const sendNudge = useCallback(async () => {
+    if (presence.partnerOnline) return;
+    try {
+      await supabase.functions.invoke("send-nudge");
+    } catch (e) {
+      // silently fail
+    }
+  }, [presence.partnerOnline]);
+
+  if (authLoading || tetherLoading) {
+    return (
+      <div className="fixed inset-0 bg-background flex items-center justify-center">
+        <motion.div
+          className="w-8 h-8 rounded-full border-2 border-foreground/20 border-t-foreground/60"
+          animate={{ rotate: 360 }}
+          transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+        />
+      </div>
+    );
+  }
+
+  if (!user) return null;
+
+  return (
+    <div className="fixed inset-0 bg-background overflow-hidden">
+      <AnimatePresence mode="wait">
+        {showColorPicker ? (
+          <ColorPicker key="picker" onColorSelected={handleColorSelected} />
+        ) : !tether || !isPaired ? (
+          <PairScreen
+            key="pair"
+            onCreateTether={createTether}
+            onJoinTether={joinTether}
+          />
+        ) : (
+          <motion.div
+            key="main"
+            className="fixed inset-0 flex flex-col items-center justify-center"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.8 }}
+          >
+            <AuraBackground
+              myColor={myProfile?.signature_color || "#53B8E8"}
+              partnerColor={partnerProfile?.signature_color || null}
+              partnerOnline={presence.partnerOnline}
+              bothOnline={presence.bothOnline}
+              synced={heartbeat.synced}
+            />
+
+            <div className="relative z-10 flex flex-col items-center">
+              <PulseButton
+                signatureColor={myProfile?.signature_color || "#53B8E8"}
+                onTap={sendNudge}
+                onHoldStart={heartbeat.startHold}
+                onHoldEnd={heartbeat.endHold}
+              />
+
+              <EphemeralStatus
+                myStatus={myProfile?.current_status}
+                myStatusSetAt={myProfile?.status_set_at}
+                partnerStatus={partnerProfile?.current_status}
+                partnerStatusSetAt={partnerProfile?.status_set_at}
+                onUpdateStatus={updateStatus}
+              />
+
+              <AnimatePresence>
+                {presence.partnerOnline && (
+                  <motion.div
+                    className="mt-8 flex items-center gap-2"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 0.5 }}
+                    exit={{ opacity: 0 }}
+                  >
+                    <div
+                      className="w-1.5 h-1.5 rounded-full"
+                      style={{ backgroundColor: partnerProfile?.signature_color || "#53B8E8" }}
+                    />
+                    <span className="text-muted-foreground text-[10px] tracking-wider">here</span>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
+            <button
+              onClick={signOut}
+              className="fixed bottom-6 text-muted-foreground/30 text-[10px] hover:text-muted-foreground/50 transition-colors"
+            >
+              sign out
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
+
+export default Index;
