@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useTether } from "@/hooks/useTether";
-import { usePushNotifications } from "@/hooks/usePushNotifications"; // NEW HOOK IMPORTED
+import { usePushNotifications } from "@/hooks/usePushNotifications";
 import ColorPicker from "@/components/ColorPicker";
 import PulseButton from "@/components/PulseButton";
 import PairScreen from "@/components/PairScreen";
@@ -30,8 +30,11 @@ const Index = () => {
     joinTether,
   } = useTether();
 
-  // Initialize our Push Notification hook
+  // Initialize Push Notification hook
   const { subscribeToPush, isSubscribed } = usePushNotifications();
+
+  // FIX: Persistent check to hide button if subscription exists in DB or browser
+  const hasPushEnabled = isSubscribed || (myProfile?.push_subscription !== null);
 
   const [showColorPicker, setShowColorPicker] = useState(false);
 
@@ -40,7 +43,7 @@ const Index = () => {
     if (!authLoading && !user) navigate("/auth");
   }, [authLoading, user, navigate]);
 
-  // Check if the user needs to pick a color (null or default)
+  // Check if the user needs to pick a color
   useEffect(() => {
     if (myProfile) {
       const needsColor = !myProfile.signature_color || myProfile.signature_color === "#53B8E8";
@@ -59,12 +62,13 @@ const Index = () => {
   };
 
   const sendNudge = useCallback(async () => {
-    // If she is already online looking at the app, we don't need to send a push notification
+    // Only send push notification if partner is offline
     if (isPartnerOnline) return; 
     try {
+      // Ensure this matches your Edge Function name: "send-nudge"
       await supabase.functions.invoke("send-nudge");
     } catch (e) {
-      // Silently fail
+      console.error("Nudge failed:", e);
     }
   }, [isPartnerOnline]);
 
@@ -125,8 +129,8 @@ const Index = () => {
               />
             </div>
 
-            {/* THE ENABLE NUDGES BUTTON (Only shows if they haven't enabled them yet) */}
-            {!isSubscribed && (
+            {/* THE ENABLE NUDGES BUTTON: Only shows if no subscription is found */}
+            {!hasPushEnabled && (
               <button
                 onClick={subscribeToPush}
                 className="fixed top-12 px-6 py-2 rounded-full bg-white/10 border border-white/20 text-white text-xs uppercase tracking-widest backdrop-blur-md z-50 hover:bg-white/20 transition-colors"
