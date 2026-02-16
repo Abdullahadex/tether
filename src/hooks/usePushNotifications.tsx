@@ -7,7 +7,7 @@ const VAPID_PUBLIC_KEY = "BHYKN1hf9If62947vIO1K6K5pORWJ2kQMr2CbD-bHrMlvLjJ7zMA6j
 
 function urlBase64ToUint8Array(base64String: string) {
   const padding = '='.repeat((4 - base64String.length % 4) % 4);
-  const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
   const rawData = window.atob(base64);
   const outputArray = new Uint8Array(rawData.length);
   for (let i = 0; i < rawData.length; ++i) {
@@ -20,7 +20,6 @@ export const usePushNotifications = () => {
   const { user } = useAuth();
   const [isSubscribed, setIsSubscribed] = useState(false);
 
-  // NEW: Check if the device is ALREADY subscribed when the app opens
   useEffect(() => {
     const checkSubscription = async () => {
       if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
@@ -30,7 +29,7 @@ export const usePushNotifications = () => {
         if (registration) {
           const subscription = await registration.pushManager.getSubscription();
           if (subscription) {
-            setIsSubscribed(true); // Successfully hides the button on reload!
+            setIsSubscribed(true); 
           }
         }
       } catch (error) {
@@ -62,3 +61,21 @@ export const usePushNotifications = () => {
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
       });
+
+      const { error } = await supabase.from('profiles').update({
+        push_subscription: JSON.parse(JSON.stringify(subscription))
+      }).eq('user_id', user.id);
+
+      if (error) throw error;
+
+      setIsSubscribed(true);
+      toast.success("Notifications enabled! You will now receive nudges.");
+
+    } catch (error) {
+      console.error("Push setup error:", error);
+      toast.error("Failed to enable notifications.");
+    }
+  }, [user]);
+
+  return { subscribeToPush, isSubscribed };
+};
