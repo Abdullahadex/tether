@@ -8,9 +8,7 @@ const corsHeaders = {
 }
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
-  }
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
     const supabaseClient = createClient(
@@ -19,16 +17,14 @@ serve(async (req) => {
     )
 
     const authHeader = req.headers.get('Authorization')!
-    const { data: { user }, error: authError } = await supabaseClient.auth.getUser(authHeader.replace('Bearer ', ''))
-    if (authError || !user) throw new Error('Unauthorized')
+    const { data: { user } } = await supabaseClient.auth.getUser(authHeader.replace('Bearer ', ''))
+    if (!user) throw new Error('Unauthorized')
 
     const { data: profile } = await supabaseClient
       .from('profiles')
       .select('partner_id')
       .eq('id', user.id)
       .single()
-
-    if (!profile?.partner_id) throw new Error('No partner paired')
 
     const { data: partner } = await supabaseClient
       .from('profiles')
@@ -45,21 +41,12 @@ serve(async (req) => {
 
       await WebPush.sendNotification(
         partner.push_subscription,
-        JSON.stringify({ 
-          title: "Tether", 
-          body: "Your partner is thinking of you! ❤️" 
-        })
+        JSON.stringify({ title: "Tether", body: "I miss you! ❤️" })
       )
     }
 
-    return new Response(JSON.stringify({ success: true }), { 
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-    })
+    return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
   } catch (error) {
-    console.error("Function error:", error.message);
-    return new Response(JSON.stringify({ error: error.message }), { 
-      status: 400,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-    })
+    return new Response(JSON.stringify({ error: error.message }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
   }
 })

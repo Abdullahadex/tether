@@ -16,7 +16,6 @@ const Index = () => {
   const navigate = useNavigate();
 
   const {
-    tether,
     myProfile,
     partnerProfile,
     loading: tetherLoading,
@@ -30,30 +29,16 @@ const Index = () => {
     joinTether,
   } = useTether();
 
-  // Initialize Push Notification hook
   const { subscribeToPush, isSubscribed } = usePushNotifications();
 
-  // FIX: Persistent check to hide button if subscription exists in DB or browser
+  // Hide button if browser state is subscribed OR database contains subscription
   const hasPushEnabled = isSubscribed || (myProfile?.push_subscription !== null);
 
   const [showColorPicker, setShowColorPicker] = useState(false);
 
-  // Redirect to auth if not logged in
   useEffect(() => {
     if (!authLoading && !user) navigate("/auth");
   }, [authLoading, user, navigate]);
-
-  // Check if the user needs to pick a color
-  useEffect(() => {
-    if (myProfile) {
-      const needsColor = !myProfile.signature_color || myProfile.signature_color === "#53B8E8";
-      const hasLocallySet = localStorage.getItem("tether_color_set");
-      
-      if (needsColor && !hasLocallySet) {
-        setShowColorPicker(true);
-      }
-    }
-  }, [myProfile]);
 
   const handleColorSelected = async (color: { hex: string }) => {
     await updateSignatureColor(color.hex);
@@ -62,10 +47,8 @@ const Index = () => {
   };
 
   const sendNudge = useCallback(async () => {
-    // Only send push notification if partner is offline
     if (isPartnerOnline) return; 
     try {
-      // Ensure this matches your Edge Function name: "send-nudge"
       await supabase.functions.invoke("send-nudge");
     } catch (e) {
       console.error("Nudge failed:", e);
@@ -125,11 +108,10 @@ const Index = () => {
                 myStatusSetAt={myProfile?.status_set_at}
                 partnerStatus={partnerProfile?.current_status}
                 partnerStatusSetAt={partnerProfile?.status_set_at}
-                onUpdateStatus={updateStatus}
+                onUpdateStatus={updateStatus} // Limited to 20 characters
               />
             </div>
 
-            {/* THE ENABLE NUDGES BUTTON: Only shows if no subscription is found */}
             {!hasPushEnabled && (
               <button
                 onClick={subscribeToPush}
@@ -139,7 +121,6 @@ const Index = () => {
               </button>
             )}
 
-            {/* THE SIGN OUT BUTTON */}
             <button
               onClick={signOut}
               className="fixed bottom-6 text-white/10 text-[10px] hover:text-white/30 transition-colors uppercase tracking-widest z-50"

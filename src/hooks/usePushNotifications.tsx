@@ -2,21 +2,20 @@ import { useState, useEffect } from 'react';
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
-// Your established VAPID Public Key
 const VAPID_PUBLIC_KEY = "BHYKN1hf9If62947vIO1K6K5pORWJ2kQMr2CbD-bHrMlvLjJ7zMA6jeBoRS3LO2LW7S51vgSOZJ-nPyarz9-Fjs";
 
 export const usePushNotifications = () => {
   const [isSubscribed, setIsSubscribed] = useState(false);
 
   useEffect(() => {
-    const checkSubscription = async () => {
+    const checkExistingSubscription = async () => {
       if ('serviceWorker' in navigator) {
         const registration = await navigator.serviceWorker.ready;
         const subscription = await registration.pushManager.getSubscription();
         setIsSubscribed(!!subscription);
       }
     };
-    checkSubscription();
+    checkExistingSubscription();
   }, []);
 
   const urlBase64ToUint8Array = (base64String: string) => {
@@ -34,7 +33,7 @@ export const usePushNotifications = () => {
     try {
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') {
-        toast.error("Notifications denied. Check iPhone settings.");
+        toast.error("Permission denied.");
         return;
       }
 
@@ -47,7 +46,6 @@ export const usePushNotifications = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Update the profiles table with the new subscription JSON
       const { error } = await supabase
         .from('profiles')
         .update({ push_subscription: subscription })
@@ -59,7 +57,7 @@ export const usePushNotifications = () => {
       toast.success("Nudges enabled!");
     } catch (err) {
       console.error(err);
-      toast.error("Failed to enable nudges. Add to Home Screen first.");
+      toast.error("Add Tether to Home Screen first.");
     }
   };
 
