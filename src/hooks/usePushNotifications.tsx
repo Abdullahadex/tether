@@ -7,7 +7,17 @@ const VAPID_PUBLIC_KEY = "BHYKN1hf9If62947vIO1K6K5pORWJ2kQMr2CbD-bHrMlvLjJ7zMA6j
 export const usePushNotifications = () => {
   const [isSubscribed, setIsSubscribed] = useState(false);
 
-  // Helper to convert VAPID key for browser security
+  useEffect(() => {
+    const checkExistingSubscription = async () => {
+      if ('serviceWorker' in navigator) {
+        const registration = await navigator.serviceWorker.ready;
+        const subscription = await registration.pushManager.getSubscription();
+        setIsSubscribed(!!subscription);
+      }
+    };
+    checkExistingSubscription();
+  }, []);
+
   const urlBase64ToUint8Array = (base64String: string) => {
     const padding = '='.repeat((4 - base64String.length % 4) % 4);
     const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
@@ -21,8 +31,13 @@ export const usePushNotifications = () => {
 
   const subscribeToPush = async () => {
     try {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        toast.error("Permission denied. Enable notifications in iPhone settings.");
+        return;
+      }
+
       const registration = await navigator.serviceWorker.ready;
-      
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
@@ -31,7 +46,6 @@ export const usePushNotifications = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Save to your 'profiles' table in Supabase
       const { error } = await supabase
         .from('profiles')
         .update({ push_subscription: subscription })
@@ -43,7 +57,7 @@ export const usePushNotifications = () => {
       toast.success("Nudges enabled!");
     } catch (err) {
       console.error("Subscription failed:", err);
-      toast.error("Failed to enable nudges. Make sure Tether is added to your Home Screen.");
+      toast.error("Failed to enable nudges. Ensure Tether is added to Home Screen.");
     }
   };
 
