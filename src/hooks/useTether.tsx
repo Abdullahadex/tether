@@ -124,12 +124,22 @@ export const useTether = () => {
     await fetchMyProfile();
   };
 
+  // MISSING FUNCTION ADDED HERE
+  const updateSignatureColor = async (color: string) => {
+    if (!user) return;
+    await supabase.from("profiles").update({ 
+      signature_color: color 
+    }).eq("user_id", user.id);
+    await fetchMyProfile();
+  };
+
   return {
     tether, 
     myProfile, 
     partnerProfile, 
     loading, 
     updateStatus,
+    updateSignatureColor, // EXPORTED HERE
     isPaired: !!(tether?.user1_id && tether?.user2_id),
     isPartnerOnline, 
     isPartnerHolding, 
