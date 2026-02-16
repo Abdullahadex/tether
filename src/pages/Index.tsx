@@ -32,13 +32,20 @@ const Index = () => {
 
   const [showColorPicker, setShowColorPicker] = useState(false);
 
+  // Redirect to auth if not logged in
   useEffect(() => {
     if (!authLoading && !user) navigate("/auth");
   }, [authLoading, user, navigate]);
 
+  // FIX: Safely check if the user needs to pick a color (null or default)
   useEffect(() => {
-    if (myProfile && myProfile.signature_color === "#53B8E8" && !localStorage.getItem("tether_color_set")) {
-      setShowColorPicker(true);
+    if (myProfile) {
+      const needsColor = !myProfile.signature_color || myProfile.signature_color === "#53B8E8";
+      const hasLocallySet = localStorage.getItem("tether_color_set");
+      
+      if (needsColor && !hasLocallySet) {
+        setShowColorPicker(true);
+      }
     }
   }, [myProfile]);
 
