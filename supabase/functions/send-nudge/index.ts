@@ -1,4 +1,4 @@
-import webPush from "https://esm.sh/web-push@3.6.7";
+import * as WebPush from "npm:web-push-browser";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.38.4";
 
@@ -22,14 +22,12 @@ serve(async (req) => {
     const { data: { user } } = await supabaseClient.auth.getUser();
     if (!user) throw new Error("Not authenticated");
 
-    // NEW: Fetch the sender's name from their profile
     const { data: senderProfile } = await supabaseClient
       .from('profiles')
       .select('name')
       .eq('user_id', user.id)
       .single();
 
-    // If they don't have a name set, default to "someone"
     const senderName = senderProfile?.name || 'someone';
 
     const { data: tether } = await supabaseClient
@@ -55,25 +53,44 @@ serve(async (req) => {
        });
     }
 
-    webPush.setVapidDetails(
-      'mailto:hello@tether.app', 
-      Deno.env.get('VAPID_PUBLIC_KEY') ?? '',
-      Deno.env.get('VAPID_PRIVATE_KEY') ?? ''
-    );
+    // 1. Get the Web Push function
+    const sendPush = WebPush.sendPushNotification || WebPush.sendNotification;
 
-    // NEW: Inject the name into the notification body!
-    const payload = JSON.stringify({
-      title: 'You got a nudge ✨',
-      body: `${senderName.toLowerCase()} is thinking about you...`, 
+    // 2. Deserialize VAPID keys into a modern Web Crypto KeyPair
+    const keyPair = await WebPush.deserializeVapidKeys({
+      publicKey: Deno.env.get('VAPID_PUBLIC_KEY') ?? '',
+      privateKey: Deno.env.get('VAPID_PRIVATE_KEY') ?? ''
     });
 
-    await webPush.sendNotification(partnerProfile.push_subscription, payload);
+    const sub = partnerProfile.push_subscription;
+
+    // 3. Send the notification directly to Apple using Deno's native Web Crypto!
+    const res = await sendPush(
+      keyPair,
+      {
+        endpoint: sub.endpoint,
+        keys: {
+          auth: sub.keys.auth,
+          p256dh: sub.keys.p256dh
+        }
+      },
+      "mailto:hello@tether.app", 
+      JSON.stringify({
+        title: 'You got a nudge ✨',
+        body: `${senderName.toLowerCase()} is thinking about you...`, 
+      })
+    );
+
+    if (!res.ok) {
+        throw new Error(`Push service failed with status: ${res.status}`);
+    }
 
     return new Response(JSON.stringify({ success: true }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     });
   } catch (error) {
+    console.error("Push Error:", error);
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 500,
