@@ -39,13 +39,17 @@ export const useTether = () => {
     setPartnerProfile(data);
   }, [user]);
 
+  // Realtime Subscription Effect
   useEffect(() => {
     if (!user || !tether) return;
     const pId = tether.user1_id === user.id ? tether.user2_id : tether.user1_id;
     if (!pId) return;
 
     const channel = supabase.channel(`tether:${tether.id}`, {
-      config: { presence: { key: user.id } }
+      config: { 
+        presence: { key: user.id },
+        broadcast: { self: false, ack: false } 
+      }
     });
 
     channel
@@ -55,21 +59,34 @@ export const useTether = () => {
       })
       .on('broadcast', { event: 'heartbeat' }, ({ payload }) => {
         setIsPartnerHolding(payload.isHolding);
+        
+        // HAPTICS FOR RECEIVER: Double-pulse "Heartbeat" when partner presses
         if (payload.isHolding && "vibrate" in navigator) {
-          navigator.vibrate([50]); // Physical thump when she touches the button
+          navigator.vibrate([100, 50, 100]); 
         }
       })
       .on('postgres_changes', { 
-        event: 'UPDATE', schema: 'public', table: 'profiles', filter: `user_id=eq.${pId}` 
-      }, (payload) => setPartnerProfile(payload.new))
+        event: 'UPDATE', 
+        schema: 'public', 
+        table: 'profiles', 
+        filter: `user_id=eq.${pId}` 
+      }, (payload) => {
+        setPartnerProfile(payload.new);
+      })
       .subscribe(async (status) => {
-        if (status === 'SUBSCRIBED') await channel.track({ online_at: new Date().toISOString() });
+        if (status === 'SUBSCRIBED') {
+          await channel.track({ online_at: new Date().toISOString() });
+        }
       });
 
     channelRef.current = channel;
-    return () => { supabase.removeChannel(channel); };
+    
+    return () => { 
+      supabase.removeChannel(channel); 
+    };
   }, [user, tether]);
 
+  // Initial Load Effect
   useEffect(() => {
     if (!user) return;
     const init = async () => {
@@ -83,6 +100,11 @@ export const useTether = () => {
   }, [user, fetchTether, fetchMyProfile, fetchPartnerProfile]);
 
   const sendHeartbeat = (isHolding: boolean) => {
+    // HAPTICS FOR SENDER: A quick single tap on your own phone when you press
+    if (isHolding && "vibrate" in navigator) {
+      navigator.vibrate([50]); 
+    }
+
     if (channelRef.current) {
       channelRef.current.send({
         type: 'broadcast',
@@ -103,9 +125,15 @@ export const useTether = () => {
   };
 
   return {
-    tether, myProfile, partnerProfile, loading, updateStatus,
+    tether, 
+    myProfile, 
+    partnerProfile, 
+    loading, 
+    updateStatus,
     isPaired: !!(tether?.user1_id && tether?.user2_id),
-    isPartnerOnline, isPartnerHolding, sendHeartbeat,
+    isPartnerOnline, 
+    isPartnerHolding, 
+    sendHeartbeat,
     createTether: async () => {
         const code = Math.random().toString(36).substring(2, 8).toUpperCase();
         const { data } = await supabase.from("tethers").insert({ user1_id: user.id, pair_code: code }).select().single();
