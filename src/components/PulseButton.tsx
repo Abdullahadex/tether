@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { motion } from "framer-motion";
 
 interface PulseButtonProps {
@@ -17,26 +17,33 @@ const PulseButton = ({
   onTap,
 }: PulseButtonProps) => {
   const [isPressed, setIsPressed] = useState(false);
+  const pressStartTime = useRef<number>(0);
 
   const handlePointerDown = () => {
     setIsPressed(true);
-    onHoldStart();
+    pressStartTime.current = Date.now();
+    onHoldStart(); // Instantly start the realtime heartbeat
   };
 
   const handlePointerUp = () => {
     if (isPressed) {
       setIsPressed(false);
-      onHoldEnd();
+      onHoldEnd(); // Stop the heartbeat
+      
+      // If the interaction was a quick tap (less than 300ms), send the "I miss you" Nudge
+      if (Date.now() - pressStartTime.current < 300) {
+        onTap();
+      }
     }
   };
 
   return (
-    <div className="flex flex-col items-center justify-center gap-10 mt-8">
+    <div className="flex flex-col items-center justify-center mt-8">
       
-      {/* THE GLOWING ORB (Heartbeat) */}
+      {/* THE GLOWING ORB */}
       <motion.div
         className="relative flex items-center justify-center rounded-full select-none touch-none cursor-pointer"
-        style={{ width: 180, height: 180 }}
+        style={{ width: 180, height: 180, WebkitTapHighlightColor: "transparent" }}
         onPointerDown={handlePointerDown}
         onPointerUp={handlePointerUp}
         onPointerLeave={handlePointerUp}
@@ -84,22 +91,10 @@ const PulseButton = ({
         </div>
       </motion.div>
 
-      {/* THE CONTROLS / LABELS */}
-      <div className="flex flex-col items-center gap-5">
-        <p className="text-white/30 text-[9px] tracking-[0.4em] uppercase font-medium">
-          Hold to send heartbeat
-        </p>
-        
-        {/* THE "I MISS YOU" BUTTON */}
-        <motion.button
-          onClick={onTap}
-          whileHover={{ scale: 1.05, backgroundColor: "rgba(255,255,255,0.1)" }}
-          whileTap={{ scale: 0.95 }}
-          className="px-8 py-3 rounded-full bg-white/5 border border-white/10 text-white/80 transition-colors text-[10px] tracking-[0.2em] uppercase backdrop-blur-sm"
-        >
-          tap to say "i miss you"
-        </motion.button>
-      </div>
+      {/* Minimal helper text, purely optional */}
+      <p className="mt-12 text-white/20 text-[9px] tracking-[0.3em] uppercase font-medium text-center">
+        Tap to send a nudge<br />Hold for heartbeat
+      </p>
 
     </div>
   );

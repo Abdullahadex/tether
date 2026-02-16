@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useTether } from "@/hooks/useTether";
+import { usePushNotifications } from "@/hooks/usePushNotifications"; // NEW HOOK IMPORTED
 import ColorPicker from "@/components/ColorPicker";
 import PulseButton from "@/components/PulseButton";
 import PairScreen from "@/components/PairScreen";
@@ -27,8 +28,10 @@ const Index = () => {
     updateStatus,
     createTether,
     joinTether,
-    fetchTether,
   } = useTether();
+
+  // Initialize our Push Notification hook
+  const { subscribeToPush, isSubscribed } = usePushNotifications();
 
   const [showColorPicker, setShowColorPicker] = useState(false);
 
@@ -37,7 +40,7 @@ const Index = () => {
     if (!authLoading && !user) navigate("/auth");
   }, [authLoading, user, navigate]);
 
-  // FIX: Safely check if the user needs to pick a color (null or default)
+  // Check if the user needs to pick a color (null or default)
   useEffect(() => {
     if (myProfile) {
       const needsColor = !myProfile.signature_color || myProfile.signature_color === "#53B8E8";
@@ -56,7 +59,8 @@ const Index = () => {
   };
 
   const sendNudge = useCallback(async () => {
-    if (isPartnerOnline) return;
+    // If she is already online looking at the app, we don't need to send a push notification
+    if (isPartnerOnline) return; 
     try {
       await supabase.functions.invoke("send-nudge");
     } catch (e) {
@@ -121,9 +125,20 @@ const Index = () => {
               />
             </div>
 
+            {/* THE ENABLE NUDGES BUTTON (Only shows if they haven't enabled them yet) */}
+            {!isSubscribed && (
+              <button
+                onClick={subscribeToPush}
+                className="fixed top-12 px-6 py-2 rounded-full bg-white/10 border border-white/20 text-white text-xs uppercase tracking-widest backdrop-blur-md z-50 hover:bg-white/20 transition-colors"
+              >
+                Enable Nudges
+              </button>
+            )}
+
+            {/* THE SIGN OUT BUTTON */}
             <button
               onClick={signOut}
-              className="fixed bottom-6 text-white/10 text-[10px] hover:text-white/30 transition-colors uppercase tracking-widest"
+              className="fixed bottom-6 text-white/10 text-[10px] hover:text-white/30 transition-colors uppercase tracking-widest z-50"
             >
               sign out
             </button>
