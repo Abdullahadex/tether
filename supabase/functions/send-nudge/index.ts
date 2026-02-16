@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import WebPush from 'https://esm.sh/web-push'
+import WebPush from 'https://esm.sh/web-push@3.6.6'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -8,7 +8,6 @@ const corsHeaders = {
 }
 
 serve(async (req) => {
-  // Handle CORS preflight requests for the browser
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
@@ -19,13 +18,10 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    // Get the user who triggered the nudge
     const authHeader = req.headers.get('Authorization')!
     const { data: { user }, error: authError } = await supabaseClient.auth.getUser(authHeader.replace('Bearer ', ''))
-    
     if (authError || !user) throw new Error('Unauthorized')
 
-    // 1. Find the partner's ID from your profile
     const { data: profile } = await supabaseClient
       .from('profiles')
       .select('partner_id')
@@ -34,7 +30,6 @@ serve(async (req) => {
 
     if (!profile?.partner_id) throw new Error('No partner paired')
 
-    // 2. Get the partner's push subscription from the DB
     const { data: partner } = await supabaseClient
       .from('profiles')
       .select('push_subscription')
@@ -61,6 +56,7 @@ serve(async (req) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
     })
   } catch (error) {
+    console.error("Function error:", error.message);
     return new Response(JSON.stringify({ error: error.message }), { 
       status: 400,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
