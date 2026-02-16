@@ -1,49 +1,156 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import WebPush from 'https://esm.sh/web-push'
+import { useState, useEffect, useCallback } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { AnimatePresence, motion } from "framer-motion";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
+import { useTether } from "@/hooks/useTether";
+import { usePushNotifications } from "@/hooks/usePushNotifications";
+import ColorPicker from "@/components/ColorPicker";
+import PulseButton from "@/components/PulseButton";
+import PairScreen from "@/components/PairScreen";
+import AuraBackground from "@/components/AuraBackground";
+import EphemeralStatus from "@/components/EphemeralStatus";
 
-const VAPID_PUBLIC_KEY = "BHYKN1hf9If62947vIO1K6K5pORWJ2kQMr2CbD-bHrMlvLjJ7zMA6jeBoRS3LO2LW7S51vgSOZJ-nPyarz9-Fjs";
-const VAPID_PRIVATE_KEY = Deno.env.get('VAPID_PRIVATE_KEY'); // Should be KLWPWlWT6Lv3fqVWvWu06l83KXqD-zndAc1z5EnFeDU
+const Index = () => {
+  const { user, loading: authLoading, signOut } = useAuth();
+  const navigate = useNavigate();
 
-WebPush.setVapidDetails(
-  'mailto:your-email@example.com',
-  VAPID_PUBLIC_KEY,
-  VAPID_PRIVATE_KEY
-);
+  const {
+    tether,
+    myProfile,
+    partnerProfile,
+    loading: tetherLoading,
+    isPaired,
+    isPartnerOnline,
+    isPartnerHolding,
+    sendHeartbeat,
+    updateSignatureColor,
+    updateStatus,
+    createTether,
+    joinTether,
+  } = useTether();
 
-serve(async (req) => {
-  const supabaseClient = createClient(
-    Deno.env.get('SUPABASE_URL') ?? '',
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-  )
+  // Initialize Push Notification hook
+  const { subscribeToPush, isSubscribed } = usePushNotifications();
 
-  const authHeader = req.headers.get('Authorization')!
-  const { data: { user } } = await supabaseClient.auth.getUser(authHeader.replace('Bearer ', ''))
+  // FIX: Persistent check to hide button if subscription exists in DB or browser
+  const hasPushEnabled = isSubscribed || (myProfile?.push_subscription !== null);
 
-  const { data: profile } = await supabaseClient
-    .from('profiles')
-    .select('partner_id')
-    .eq('id', user?.id)
-    .single()
+  const [showColorPicker, setShowColorPicker] = useState(false);
 
-  const { data: partner } = await supabaseClient
-    .from('profiles')
-    .select('push_subscription')
-    .eq('id', profile.partner_id)
-    .single()
+  // Redirect to auth if not logged in
+  useEffect(() => {
+    if (!authLoading && !user) navigate("/auth");
+  }, [authLoading, user, navigate]);
 
-  if (partner?.push_subscription) {
-    try {
-      await WebPush.sendNotification(
-        partner.push_subscription,
-        JSON.stringify({ title: "Tether", body: "I miss you! ❤️" })
-      )
-    } catch (error) {
-      console.error("Error sending push:", error);
+  // Check if the user needs to pick a color
+  useEffect(() => {
+    if (myProfile) {
+      const needsColor = !myProfile.signature_color || myProfile.signature_color === "#53B8E8";
+      const hasLocallySet = localStorage.getItem("tether_color_set");
+      
+      if (needsColor && !hasLocallySet) {
+        setShowColorPicker(true);
+      }
     }
+  }, [myProfile]);
+
+  const handleColorSelected = async (color: { hex: string }) => {
+    await updateSignatureColor(color.hex);
+    localStorage.setItem("tether_color_set", "true");
+    setShowColorPicker(false);
+  };
+
+  const sendNudge = useCallback(async () => {
+    // Only send push notification if partner is offline
+    if (isPartnerOnline) return; 
+    try {
+      // Ensure this matches your Edge Function name: "send-nudge"
+      await supabase.functions.invoke("send-nudge");
+    } catch (e) {
+      console.error("Nudge failed:", e);
+    }
+  }, [isPartnerOnline]);
+
+  if (authLoading || tetherLoading) {
+    return (
+      <div className="fixed inset-0 bg-[#050505] flex items-center justify-center">
+        <motion.div
+          className="w-8 h-8 rounded-full border-2 border-white/20 border-t-white/60"
+          animate={{ rotate: 360 }}
+          transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+        />
+      </div>
+    );
   }
 
-  return new Response(JSON.stringify({ success: true }), { 
-    headers: { 'Content-Type': 'application/json' } 
-  })
-})
+  if (!user) return null;
+
+  return (
+    <div className="fixed inset-0 bg-[#050505] overflow-hidden">
+      <AnimatePresence mode="wait">
+        {showColorPicker ? (
+          <ColorPicker key="picker" onColorSelected={handleColorSelected} />
+        ) : !isPaired ? (
+          <PairScreen
+            key="pair"
+            onCreateTether={createTether}
+            onJoinTether={joinTether}
+          />
+        ) : (
+          <motion.div
+            key="main"
+            className="fixed inset-0 flex flex-col items-center justify-center"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.8 }}
+          >
+            <AuraBackground
+              myColor={myProfile?.signature_color || "#53B8E8"}
+              partnerColor={partnerProfile?.signature_color || null}
+              partnerOnline={isPartnerOnline}
+            />
+
+            <div className="relative z-10 flex flex-col items-center">
+              <PulseButton
+                signatureColor={myProfile?.signature_color || "#53B8E8"}
+                isPartnerHolding={isPartnerHolding}
+                onHoldStart={() => sendHeartbeat(true)}
+                onHoldEnd={() => sendHeartbeat(false)}
+                onTap={sendNudge}
+              />
+
+              <EphemeralStatus
+                myStatus={myProfile?.current_status}
+                myStatusSetAt={myProfile?.status_set_at}
+                partnerStatus={partnerProfile?.current_status}
+                partnerStatusSetAt={partnerProfile?.status_set_at}
+                onUpdateStatus={updateStatus}
+              />
+            </div>
+
+            {/* THE ENABLE NUDGES BUTTON: Only shows if no subscription is found */}
+            {!hasPushEnabled && (
+              <button
+                onClick={subscribeToPush}
+                className="fixed top-12 px-6 py-2 rounded-full bg-white/10 border border-white/20 text-white text-xs uppercase tracking-widest backdrop-blur-md z-50 hover:bg-white/20 transition-colors"
+              >
+                Enable Nudges
+              </button>
+            )}
+
+            {/* THE SIGN OUT BUTTON */}
+            <button
+              onClick={signOut}
+              className="fixed bottom-6 text-white/10 text-[10px] hover:text-white/30 transition-colors uppercase tracking-widest z-50"
+            >
+              sign out
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
+
+export default Index;
