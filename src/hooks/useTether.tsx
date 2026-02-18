@@ -13,6 +13,7 @@ export const useTether = () => {
   const [isPartnerHolding, setIsPartnerHolding] = useState(false);
   const [lastNudgeAt, setLastNudgeAt] = useState<number | null>(null);
   const channelRef = useRef<any>(null);
+  const channelReadyRef = useRef(false);
 
   const fetchTether = useCallback(async () => {
     if (!user) return;
@@ -125,7 +126,7 @@ export const useTether = () => {
     const channel = supabase.channel(`tether:${tether.id}`, {
       config: { 
         presence: { key: user.id },
-        broadcast: { self: false, ack: false } 
+        broadcast: { self: false, ack: true } 
       }
     });
 
@@ -162,14 +163,18 @@ export const useTether = () => {
       })
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
+          channelReadyRef.current = true;
           await channel.track({ online_at: new Date().toISOString() });
           updatePartnerOnlineFromPresence(channel);
+        } else if (status === 'CLOSED' || status === 'TIMED_OUT' || status === 'CHANNEL_ERROR') {
+          channelReadyRef.current = false;
         }
       });
 
     channelRef.current = channel;
     
     return () => { 
+      channelReadyRef.current = false;
       setIsPartnerOnline(false);
       setIsPartnerHolding(false);
       supabase.removeChannel(channel); 
@@ -218,13 +223,15 @@ export const useTether = () => {
   };
 
   const sendNudgeSignal = async () => {
-    if (channelRef.current) {
-      await channelRef.current.send({
+    if (!channelRef.current || !channelReadyRef.current) return false;
+
+    const result = await channelRef.current.send({
         type: 'broadcast',
         event: 'nudge',
         payload: { at: new Date().toISOString() }
       });
-    }
+
+    return result === "ok";
   };
 
   const updateStatus = async (status: string) => {

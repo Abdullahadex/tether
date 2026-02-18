@@ -55,8 +55,8 @@ const Index = () => {
 
   const sendNudge = useCallback(async () => {
     try {
-      await sendNudgeSignal();
-      if (!isPartnerOnline) {
+      const deliveredInApp = await sendNudgeSignal();
+      if (!deliveredInApp || !isPartnerOnline) {
         await supabase.functions.invoke("send-nudge");
       }
     } catch (e) {
