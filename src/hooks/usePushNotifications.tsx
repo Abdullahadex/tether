@@ -38,6 +38,35 @@ export const usePushNotifications = () => {
     return outputArray;
   };
 
+  const saveSubscriptionForCurrentUser = async (subscriptionJson: object) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({ push_subscription: subscriptionJson })
+      .eq('user_id', user.id);
+
+    if (error) throw error;
+  };
+
+  useEffect(() => {
+    const syncExistingSubscription = async () => {
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+
+      try {
+        const registration = await ensureServiceWorkerRegistration();
+        const existingSubscription = await registration.pushManager.getSubscription();
+        if (!existingSubscription) return;
+        await saveSubscriptionForCurrentUser(existingSubscription.toJSON());
+      } catch (error) {
+        console.error("Failed to sync push subscription:", error);
+      }
+    };
+
+    syncExistingSubscription();
+  }, []);
+
   const subscribeToPush = async () => {
     try {
       if (!('Notification' in window)) {
@@ -63,15 +92,7 @@ export const usePushNotifications = () => {
         applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
       });
 
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { error } = await supabase
-        .from('profiles')
-        .update({ push_subscription: subscription.toJSON() })
-        .eq('user_id', user.id);
-
-      if (error) throw error;
+      await saveSubscriptionForCurrentUser(subscription.toJSON());
 
       setIsSubscribed(true);
       toast.success("Nudges enabled!");

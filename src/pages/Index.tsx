@@ -17,6 +17,7 @@ const Index = () => {
   const navigate = useNavigate();
 
   const {
+    tether,
     myProfile,
     partnerProfile,
     loading: tetherLoading,
@@ -55,14 +56,17 @@ const Index = () => {
 
   const sendNudge = useCallback(async () => {
     try {
-      const deliveredInApp = await sendNudgeSignal();
-      if (!deliveredInApp || !isPartnerOnline) {
-        await supabase.functions.invoke("send-nudge");
+      await sendNudgeSignal();
+      const { error } = await supabase.functions.invoke("send-nudge", {
+        body: { tetherId: tether?.id ?? null },
+      });
+      if (error) {
+        console.error("Push nudge failed:", error);
       }
     } catch (e) {
       console.error("Nudge failed:", e);
     }
-  }, [isPartnerOnline, sendNudgeSignal]);
+  }, [sendNudgeSignal, tether?.id]);
 
   if (authLoading || tetherLoading) {
     return (

@@ -22,11 +22,39 @@ serve(async (req) => {
     const { data: { user } } = await supabaseClient.auth.getUser(authHeader.replace('Bearer ', ''))
     if (!user) throw new Error('Unauthorized')
 
-    const { data: tether } = await supabaseClient
-      .from('tethers')
-      .select('user1_id, user2_id')
-      .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`)
-      .maybeSingle()
+    let tetherId: string | null = null
+    try {
+      const body = await req.json()
+      tetherId = body?.tetherId ?? null
+    } catch {
+      tetherId = null
+    }
+
+    let tether: { user1_id: string; user2_id: string | null } | null = null
+
+    if (tetherId) {
+      const { data: tetherById } = await supabaseClient
+        .from('tethers')
+        .select('user1_id, user2_id')
+        .eq('id', tetherId)
+        .maybeSingle()
+
+      if (tetherById && (tetherById.user1_id === user.id || tetherById.user2_id === user.id)) {
+        tether = tetherById
+      }
+    }
+
+    if (!tether) {
+      const { data: tetherRows } = await supabaseClient
+        .from('tethers')
+        .select('user1_id, user2_id, created_at')
+        .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`)
+        .order('created_at', { ascending: false })
+        .limit(20)
+
+      const rows = tetherRows ?? []
+      tether = rows.find((row) => row.user2_id) ?? rows[0] ?? null
+    }
 
     if (!tether || !tether.user2_id) {
       return new Response(JSON.stringify({ success: true, reason: 'No paired partner' }), {
@@ -49,10 +77,22 @@ serve(async (req) => {
         Deno.env.get('VAPID_PRIVATE_KEY')!
       )
 
-      await WebPush.sendNotification(
-        partnerProfile.push_subscription as any,
-        JSON.stringify({ title: "Tether", body: "I miss you! ❤️" })
-      )
+      try {
+        await WebPush.sendNotification(
+          partnerProfile.push_subscription as any,
+          JSON.stringify({ title: "Tether", body: "I miss you! ❤️" })
+        )
+      } catch (pushError: any) {
+        const statusCode = pushError?.statusCode ?? pushError?.status_code
+        if (statusCode === 404 || statusCode === 410) {
+          await supabaseClient
+            .from('profiles')
+            .update({ push_subscription: null })
+            .eq('user_id', partnerUserId)
+        } else {
+          throw pushError
+        }
+      }
     }
 
     return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
