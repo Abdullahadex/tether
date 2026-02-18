@@ -20,15 +20,21 @@ export const useTether = () => {
       .select("*")
       .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`)
       .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .limit(20);
     if (error) {
       console.error("Failed to fetch tether:", error);
       setTether(null);
       return null;
     }
-    setTether(data);
-    return data;
+
+    const rows = data ?? [];
+    const selectedTether =
+      rows.find((row) => row.user2_id && (row.user1_id === user.id || row.user2_id === user.id)) ??
+      rows[0] ??
+      null;
+
+    setTether(selectedTether);
+    return selectedTether;
   }, [user]);
 
   const fetchMyProfile = useCallback(async () => {
@@ -207,10 +213,24 @@ export const useTether = () => {
   const updateStatus = async (status: string) => {
     if (!user) return;
     const limited = status.slice(0, 20);
-    await supabase.from("profiles").update({ 
-      current_status: limited || null, 
-      status_set_at: limited ? new Date().toISOString() : null 
+    const nextStatus = limited || null;
+    const nextStatusSetAt = limited ? new Date().toISOString() : null;
+
+    setMyProfile((prev: any) =>
+      prev
+        ? { ...prev, current_status: nextStatus, status_set_at: nextStatusSetAt }
+        : prev
+    );
+
+    const { error } = await supabase.from("profiles").update({
+      current_status: nextStatus,
+      status_set_at: nextStatusSetAt
     }).eq("user_id", user.id);
+
+    if (error) {
+      console.error("Failed to update status:", error);
+    }
+
     await fetchMyProfile();
   };
 
@@ -234,6 +254,20 @@ export const useTether = () => {
     isPartnerHolding, 
     sendHeartbeat,
     createTether: async () => {
+        const { data: existingPending } = await supabase
+          .from("tethers")
+          .select("*")
+          .eq("user1_id", user.id)
+          .is("user2_id", null)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (existingPending) {
+          setTether(existingPending);
+          return existingPending;
+        }
+
         const code = Math.random().toString(36).substring(2, 8).toUpperCase();
         const { data } = await supabase.from("tethers").insert({ user1_id: user.id, pair_code: code }).select().single();
         if (data) {
@@ -247,6 +281,13 @@ export const useTether = () => {
         if (!ex) return { error: "Invalid code" };
         const { data } = await supabase.from("tethers").update({ user2_id: user.id }).eq("id", ex.id).select().single();
         if (data) {
+          await supabase
+            .from("tethers")
+            .delete()
+            .eq("user1_id", user.id)
+            .is("user2_id", null)
+            .neq("id", data.id);
+
           setTether(data);
           await fetchPartnerProfile(data);
         }

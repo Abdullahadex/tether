@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface EphemeralStatusProps {
@@ -6,7 +6,7 @@ interface EphemeralStatusProps {
   myStatusSetAt: string | null;
   partnerStatus: string | null;
   partnerStatusSetAt: string | null;
-  onUpdateStatus: (status: string) => void;
+  onUpdateStatus: (status: string) => Promise<void>;
 }
 
 const isExpired = (setAt: string | null) => {
@@ -23,6 +23,7 @@ const EphemeralStatus = ({
 }: EphemeralStatusProps) => {
   const [editing, setEditing] = useState(false);
   const [input, setInput] = useState("");
+  const isSavingRef = useRef(false);
 
   const activePartnerStatus = useMemo(
     () => (partnerStatus && !isExpired(partnerStatusSetAt) ? partnerStatus : null),
@@ -40,10 +41,14 @@ const EphemeralStatus = ({
     return () => clearInterval(timer);
   }, []);
 
-  const handleSubmit = () => {
-    onUpdateStatus(input.trim());
+  const handleSubmit = async () => {
+    if (isSavingRef.current) return;
+    isSavingRef.current = true;
+
+    await onUpdateStatus(input.trim());
     setEditing(false);
     setInput("");
+    isSavingRef.current = false;
   };
 
   return (
@@ -71,7 +76,12 @@ const EphemeralStatus = ({
             maxLength={20}
             placeholder="feeling..."
             autoFocus
-            onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                e.currentTarget.blur();
+              }
+            }}
             onBlur={handleSubmit}
             className="bg-transparent border-b border-foreground/20 text-foreground text-sm text-center w-40 py-1 focus:outline-none focus:border-foreground/40 placeholder:text-muted-foreground/50"
           />
