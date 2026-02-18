@@ -16,6 +16,8 @@ self.addEventListener("push", (event) => {
     body: data.body,
     icon: "/icon.png",
     badge: "/icon.png",
+    tag: "nudge",
+    renotify: true,
     vibrate: [200, 100, 200],
     data: { url: "/" },
   };

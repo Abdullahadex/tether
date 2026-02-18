@@ -12,8 +12,10 @@ export const useTether = () => {
   const [isPartnerOnline, setIsPartnerOnline] = useState(false);
   const [isPartnerHolding, setIsPartnerHolding] = useState(false);
   const [lastNudgeAt, setLastNudgeAt] = useState<number | null>(null);
+  const [reconnectTrigger, setReconnectTrigger] = useState(0);
   const channelRef = useRef<any>(null);
   const channelReadyRef = useRef(false);
+  const hiddenAtRef = useRef<number>(0);
 
   const fetchTether = useCallback(async () => {
     if (!user) return;
@@ -168,18 +170,30 @@ export const useTether = () => {
           updatePartnerOnlineFromPresence(channel);
         } else if (status === 'CLOSED' || status === 'TIMED_OUT' || status === 'CHANNEL_ERROR') {
           channelReadyRef.current = false;
+          setReconnectTrigger((t) => t + 1);
         }
       });
 
     channelRef.current = channel;
-    
-    return () => { 
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        hiddenAtRef.current = Date.now();
+      } else if (document.visibilityState === 'visible' && hiddenAtRef.current && Date.now() - hiddenAtRef.current > 2000) {
+        hiddenAtRef.current = 0;
+        setTimeout(() => setReconnectTrigger((t) => t + 1), 400);
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       channelReadyRef.current = false;
       setIsPartnerOnline(false);
       setIsPartnerHolding(false);
-      supabase.removeChannel(channel); 
+      supabase.removeChannel(channel);
     };
-  }, [user, tether]);
+  }, [user, tether, reconnectTrigger]);
 
   useEffect(() => {
     if (!user) return;

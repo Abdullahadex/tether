@@ -44,7 +44,7 @@ export const usePushNotifications = () => {
 
     const { error } = await supabase
       .from('profiles')
-      .update({ push_subscription: subscriptionJson })
+      .update({ push_subscription: subscriptionJson as any })
       .eq('user_id', user.id);
 
     if (error) throw error;
@@ -67,6 +67,14 @@ export const usePushNotifications = () => {
     syncExistingSubscription();
   }, []);
 
+  const isMobileStandalone = () => {
+    if (!/Android|iPhone|iPad|iPod|webOS|BlackBerry/i.test(navigator.userAgent)) return true;
+    return (
+      window.matchMedia("(display-mode: standalone)").matches ||
+      (window as any).standalone === true
+    );
+  };
+
   const subscribeToPush = async () => {
     try {
       if (!('Notification' in window)) {
@@ -76,6 +84,11 @@ export const usePushNotifications = () => {
 
       if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
         toast.error("Push notifications are not supported on this device.");
+        return;
+      }
+
+      if (!isMobileStandalone()) {
+        toast.error("Add Tether to your Home Screen first, then try again.");
         return;
       }
 

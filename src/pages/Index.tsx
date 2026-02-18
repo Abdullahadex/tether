@@ -9,6 +9,7 @@ import { usePushNotifications } from "@/hooks/usePushNotifications";
 import ColorPicker from "@/components/ColorPicker";
 import PulseButton from "@/components/PulseButton";
 import PairScreen from "@/components/PairScreen";
+import { PWAInstallPrompt } from "@/components/PWAInstallPrompt";
 import AuraBackground from "@/components/AuraBackground";
 import EphemeralStatus from "@/components/EphemeralStatus";
 
@@ -56,15 +57,21 @@ const Index = () => {
 
   const sendNudge = useCallback(async () => {
     try {
-      await sendNudgeSignal();
+      const deliveredInApp = await sendNudgeSignal();
       const { error } = await supabase.functions.invoke("send-nudge", {
         body: { tetherId: tether?.id ?? null },
       });
+      if (deliveredInApp) {
+        toast.success("Nudge sent.");
+      } else if (!error) {
+        toast.success("Nudge sent. They'll get a notification when they're back.");
+      }
       if (error) {
         console.error("Push nudge failed:", error);
       }
     } catch (e) {
       console.error("Nudge failed:", e);
+      toast.error("Could not send nudge.");
     }
   }, [sendNudgeSignal, tether?.id]);
 
@@ -101,6 +108,7 @@ const Index = () => {
             animate={{ opacity: 1 }}
             transition={{ duration: 0.8 }}
           >
+            <PWAInstallPrompt hasPushEnabled={hasPushEnabled} />
             <AuraBackground
               myColor={myProfile?.signature_color || "#53B8E8"}
               partnerColor={partnerProfile?.signature_color || null}
