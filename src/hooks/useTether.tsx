@@ -15,11 +15,18 @@ export const useTether = () => {
 
   const fetchTether = useCallback(async () => {
     if (!user) return;
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("tethers")
       .select("*")
       .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`)
+      .order("created_at", { ascending: false })
+      .limit(1)
       .maybeSingle();
+    if (error) {
+      console.error("Failed to fetch tether:", error);
+      setTether(null);
+      return null;
+    }
     setTether(data);
     return data;
   }, [user]);
@@ -39,11 +46,74 @@ export const useTether = () => {
     setPartnerProfile(data);
   }, [user]);
 
-  // Realtime Subscription Effect
   useEffect(() => {
-    if (!user || !tether) return;
-    const pId = tether.user1_id === user.id ? tether.user2_id : tether.user1_id;
-    if (!pId) return;
+    if (!user) return;
+
+    const tetherChannel = supabase
+      .channel(`tether-updates:${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "tethers",
+          filter: `user1_id=eq.${user.id}`,
+        },
+        async (payload) => {
+          if (payload.eventType === "DELETE") {
+            setTether(null);
+            setPartnerProfile(null);
+            return;
+          }
+
+          const nextTether = payload.new as any;
+          setTether(nextTether);
+          await fetchPartnerProfile(nextTether);
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "tethers",
+          filter: `user2_id=eq.${user.id}`,
+        },
+        async (payload) => {
+          if (payload.eventType === "DELETE") {
+            setTether(null);
+            setPartnerProfile(null);
+            return;
+          }
+
+          const nextTether = payload.new as any;
+          setTether(nextTether);
+          await fetchPartnerProfile(nextTether);
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(tetherChannel);
+    };
+  }, [user, fetchPartnerProfile]);
+
+  useEffect(() => {
+    if (!user || !tether) {
+      setIsPartnerOnline(false);
+      setIsPartnerHolding(false);
+      return;
+    }
+    const partnerUserId = tether.user1_id === user.id ? tether.user2_id : tether.user1_id;
+    if (!partnerUserId) {
+      setIsPartnerOnline(false);
+      return;
+    }
+
+    const updatePartnerOnlineFromPresence = (channel: any) => {
+      const state = channel.presenceState();
+      setIsPartnerOnline(Boolean(state?.[partnerUserId]?.length));
+    };
 
     const channel = supabase.channel(`tether:${tether.id}`, {
       config: { 
@@ -54,13 +124,17 @@ export const useTether = () => {
 
     channel
       .on('presence', { event: 'sync' }, () => {
-        const state = channel.presenceState();
-        setIsPartnerOnline(!!state[pId]);
+        updatePartnerOnlineFromPresence(channel);
+      })
+      .on('presence', { event: 'join' }, () => {
+        updatePartnerOnlineFromPresence(channel);
+      })
+      .on('presence', { event: 'leave' }, () => {
+        updatePartnerOnlineFromPresence(channel);
       })
       .on('broadcast', { event: 'heartbeat' }, ({ payload }) => {
         setIsPartnerHolding(payload.isHolding);
-        
-        // HAPTICS FOR RECEIVER: Double-pulse "Heartbeat" when partner presses
+
         if (payload.isHolding && "vibrate" in navigator) {
           navigator.vibrate([100, 50, 100]); 
         }
@@ -69,24 +143,26 @@ export const useTether = () => {
         event: 'UPDATE', 
         schema: 'public', 
         table: 'profiles', 
-        filter: `user_id=eq.${pId}` 
+        filter: `user_id=eq.${partnerUserId}` 
       }, (payload) => {
         setPartnerProfile(payload.new);
       })
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
           await channel.track({ online_at: new Date().toISOString() });
+          updatePartnerOnlineFromPresence(channel);
         }
       });
 
     channelRef.current = channel;
     
     return () => { 
+      setIsPartnerOnline(false);
+      setIsPartnerHolding(false);
       supabase.removeChannel(channel); 
     };
   }, [user, tether]);
 
-  // Initial Load Effect
   useEffect(() => {
     if (!user) return;
     const init = async () => {
@@ -100,7 +176,6 @@ export const useTether = () => {
   }, [user, fetchTether, fetchMyProfile, fetchPartnerProfile]);
 
   const sendHeartbeat = (isHolding: boolean) => {
-    // HAPTICS FOR SENDER: A quick single tap on your own phone when you press
     if (isHolding && "vibrate" in navigator) {
       navigator.vibrate([50]); 
     }
@@ -116,7 +191,7 @@ export const useTether = () => {
 
   const updateStatus = async (status: string) => {
     if (!user) return;
-    const limited = status.slice(0, 20); // 20 character limit
+    const limited = status.slice(0, 20);
     await supabase.from("profiles").update({ 
       current_status: limited || null, 
       status_set_at: limited ? new Date().toISOString() : null 
@@ -124,7 +199,6 @@ export const useTether = () => {
     await fetchMyProfile();
   };
 
-  // MISSING FUNCTION ADDED HERE
   const updateSignatureColor = async (color: string) => {
     if (!user) return;
     await supabase.from("profiles").update({ 
@@ -139,7 +213,7 @@ export const useTether = () => {
     partnerProfile, 
     loading, 
     updateStatus,
-    updateSignatureColor, // EXPORTED HERE
+    updateSignatureColor,
     isPaired: !!(tether?.user1_id && tether?.user2_id),
     isPartnerOnline, 
     isPartnerHolding, 
@@ -147,14 +221,20 @@ export const useTether = () => {
     createTether: async () => {
         const code = Math.random().toString(36).substring(2, 8).toUpperCase();
         const { data } = await supabase.from("tethers").insert({ user1_id: user.id, pair_code: code }).select().single();
-        if (data) setTether(data);
+        if (data) {
+          setTether(data);
+          await fetchPartnerProfile(data);
+        }
         return data;
     },
     joinTether: async (code: string) => {
         const { data: ex } = await supabase.from("tethers").select("*").eq("pair_code", code.toUpperCase()).is("user2_id", null).maybeSingle();
         if (!ex) return { error: "Invalid code" };
         const { data } = await supabase.from("tethers").update({ user2_id: user.id }).eq("id", ex.id).select().single();
-        if (data) setTether(data);
+        if (data) {
+          setTether(data);
+          await fetchPartnerProfile(data);
+        }
         return { error: null };
     }
   };

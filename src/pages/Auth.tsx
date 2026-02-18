@@ -6,7 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 
 const Auth = () => {
   const [isSignUp, setIsSignUp] = useState(false);
-  const [name, setName] = useState(""); // NEW: State for the name
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -27,7 +27,6 @@ const Auth = () => {
         if (error) {
           setError(error.message);
         } else if (data?.user) {
-          // NEW: Save the user's name to the profiles table right after sign up
           await supabase.from("profiles").update({ name: name }).eq("user_id", data.user.id);
           navigate("/"); 
         }
@@ -60,8 +59,6 @@ const Auth = () => {
         </p>
 
         <form onSubmit={handleSubmit} className="w-full flex flex-col gap-3">
-          
-          {/* THE NEW NAME INPUT (Only shows during sign up) */}
           <AnimatePresence>
             {isSignUp && (
               <motion.input

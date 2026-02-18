@@ -31,7 +31,6 @@ const Index = () => {
 
   const { subscribeToPush, isSubscribed } = usePushNotifications();
 
-  // Hide button if browser state is subscribed OR database contains subscription
   const hasPushEnabled = isSubscribed || (myProfile?.push_subscription !== null);
 
   const [showColorPicker, setShowColorPicker] = useState(false);
@@ -108,7 +107,7 @@ const Index = () => {
                 myStatusSetAt={myProfile?.status_set_at}
                 partnerStatus={partnerProfile?.current_status}
                 partnerStatusSetAt={partnerProfile?.status_set_at}
-                onUpdateStatus={updateStatus} // Limited to 20 characters
+                onUpdateStatus={updateStatus}
               />
             </div>
 

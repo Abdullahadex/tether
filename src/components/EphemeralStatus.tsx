@@ -34,7 +34,6 @@ const EphemeralStatus = ({
     [myStatus, myStatusSetAt]
   );
 
-  // Refresh expiry check
   const [, setTick] = useState(0);
   useEffect(() => {
     const timer = setInterval(() => setTick((t) => t + 1), 60000);
@@ -49,7 +48,6 @@ const EphemeralStatus = ({
 
   return (
     <div className="flex flex-col items-center gap-3 mt-6">
-      {/* Partner's status */}
       <AnimatePresence>
         {activePartnerStatus && (
           <motion.p
@@ -64,7 +62,6 @@ const EphemeralStatus = ({
         )}
       </AnimatePresence>
 
-      {/* My status or input */}
       {editing ? (
         <motion.div className="flex items-center gap-2" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
           <input

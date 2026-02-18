@@ -22,15 +22,14 @@ const PulseButton = ({
   const handlePointerDown = () => {
     setIsPressed(true);
     pressStartTime.current = Date.now();
-    onHoldStart(); // Instantly start the realtime heartbeat
+    onHoldStart();
   };
 
   const handlePointerUp = () => {
     if (isPressed) {
       setIsPressed(false);
-      onHoldEnd(); // Stop the heartbeat
+      onHoldEnd();
       
-      // If the interaction was a quick tap (less than 300ms), send the "I miss you" Nudge
       if (Date.now() - pressStartTime.current < 300) {
         onTap();
       }
@@ -39,8 +38,6 @@ const PulseButton = ({
 
   return (
     <div className="flex flex-col items-center justify-center mt-8">
-      
-      {/* THE GLOWING ORB */}
       <motion.div
         className="relative flex items-center justify-center rounded-full select-none touch-none cursor-pointer"
         style={{ width: 180, height: 180, WebkitTapHighlightColor: "transparent" }}
@@ -55,7 +52,6 @@ const PulseButton = ({
             : { scale: 1 }
         }
       >
-        {/* Deep ambient blur behind the button */}
         <motion.div
           className="absolute inset-0 rounded-full blur-3xl"
           style={{ backgroundColor: signatureColor }}
@@ -66,19 +62,16 @@ const PulseButton = ({
           transition={{ duration: 0.4 }}
         />
 
-        {/* Rotating subtle outer ring */}
         <motion.div
           className="absolute inset-2 rounded-full border border-white/10 border-t-white/30"
           animate={{ rotate: 360 }}
           transition={{ duration: 12, repeat: Infinity, ease: "linear" }}
         />
 
-        {/* The Glass Orb itself */}
         <div 
           className="relative z-10 flex items-center justify-center w-32 h-32 rounded-full backdrop-blur-md bg-white/5 border border-white/10 shadow-2xl overflow-hidden"
           style={{ boxShadow: isPressed ? `0 0 40px ${signatureColor}50` : `0 0 15px ${signatureColor}20` }}
         >
-          {/* Inner glowing core */}
           <motion.div
             className="w-16 h-16 rounded-full blur-md"
             style={{ backgroundColor: signatureColor }}
@@ -91,11 +84,9 @@ const PulseButton = ({
         </div>
       </motion.div>
 
-      {/* Minimal helper text, purely optional */}
       <p className="mt-12 text-white/20 text-[9px] tracking-[0.3em] uppercase font-medium text-center">
         Tap to send a nudge<br />Hold for heartbeat
       </p>
-
     </div>
   );
 };

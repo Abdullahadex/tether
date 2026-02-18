@@ -7,14 +7,23 @@ const VAPID_PUBLIC_KEY = "BHYKN1hf9If62947vIO1K6K5pORWJ2kQMr2CbD-bHrMlvLjJ7zMA6j
 export const usePushNotifications = () => {
   const [isSubscribed, setIsSubscribed] = useState(false);
 
+  const ensureServiceWorkerRegistration = async () => {
+    const existing = await navigator.serviceWorker.getRegistration("/");
+    return existing ?? navigator.serviceWorker.register("/sw.js");
+  };
+
   useEffect(() => {
     const checkExistingSubscription = async () => {
-      if ('serviceWorker' in navigator) {
-        const registration = await navigator.serviceWorker.ready;
-        const subscription = await registration.pushManager.getSubscription();
-        setIsSubscribed(!!subscription);
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        setIsSubscribed(false);
+        return;
       }
+
+      const registration = await ensureServiceWorkerRegistration();
+      const subscription = await registration.pushManager.getSubscription();
+      setIsSubscribed(!!subscription);
     };
+
     checkExistingSubscription();
   }, []);
 
@@ -31,14 +40,25 @@ export const usePushNotifications = () => {
 
   const subscribeToPush = async () => {
     try {
+      if (!('Notification' in window)) {
+        toast.error("Notifications are not supported in this browser.");
+        return;
+      }
+
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        toast.error("Push notifications are not supported on this device.");
+        return;
+      }
+
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') {
         toast.error("Permission denied.");
         return;
       }
 
-      const registration = await navigator.serviceWorker.ready;
-      const subscription = await registration.pushManager.subscribe({
+      const registration = await ensureServiceWorkerRegistration();
+      const existingSubscription = await registration.pushManager.getSubscription();
+      const subscription = existingSubscription ?? await registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
       });
@@ -48,8 +68,8 @@ export const usePushNotifications = () => {
 
       const { error } = await supabase
         .from('profiles')
-        .update({ push_subscription: subscription })
-        .eq('id', user.id);
+        .update({ push_subscription: subscription.toJSON() })
+        .eq('user_id', user.id);
 
       if (error) throw error;
 
@@ -57,7 +77,7 @@ export const usePushNotifications = () => {
       toast.success("Nudges enabled!");
     } catch (err) {
       console.error(err);
-      toast.error("Add Tether to Home Screen first.");
+      toast.error("Could not enable notifications. Please try again.");
     }
   };
 

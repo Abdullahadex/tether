@@ -30,13 +30,11 @@ export const useHeartbeat = (tetherPairCode: string | null) => {
     };
   }, [tetherPairCode, user]);
 
-  // Detect sync
   useEffect(() => {
     const bothHolding = iHold && partnerHolding;
     setSynced(bothHolding);
 
     if (bothHolding && navigator.vibrate) {
-      // Heartbeat pattern: lub-dub ... lub-dub
       const pattern = [100, 80, 100, 400];
       navigator.vibrate(pattern);
       vibrateIntervalRef.current = setInterval(() => {

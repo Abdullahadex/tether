@@ -16,23 +16,33 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    const authHeader = req.headers.get('Authorization')!
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader?.startsWith('Bearer ')) throw new Error('Unauthorized')
+
     const { data: { user } } = await supabaseClient.auth.getUser(authHeader.replace('Bearer ', ''))
     if (!user) throw new Error('Unauthorized')
 
-    const { data: profile } = await supabaseClient
-      .from('profiles')
-      .select('partner_id')
-      .eq('id', user.id)
-      .single()
+    const { data: tether } = await supabaseClient
+      .from('tethers')
+      .select('user1_id, user2_id')
+      .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`)
+      .maybeSingle()
 
-    const { data: partner } = await supabaseClient
+    if (!tether || !tether.user2_id) {
+      return new Response(JSON.stringify({ success: true, reason: 'No paired partner' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    const partnerUserId = tether.user1_id === user.id ? tether.user2_id : tether.user1_id
+
+    const { data: partnerProfile } = await supabaseClient
       .from('profiles')
       .select('push_subscription')
-      .eq('id', profile.partner_id)
-      .single()
+      .eq('user_id', partnerUserId)
+      .maybeSingle()
 
-    if (partner?.push_subscription) {
+    if (partnerProfile?.push_subscription) {
       WebPush.setVapidDetails(
         'mailto:support@tether.app',
         "BHYKN1hf9If62947vIO1K6K5pORWJ2kQMr2CbD-bHrMlvLjJ7zMA6jeBoRS3LO2LW7S51vgSOZJ-nPyarz9-Fjs",
@@ -40,7 +50,7 @@ serve(async (req) => {
       )
 
       await WebPush.sendNotification(
-        partner.push_subscription,
+        partnerProfile.push_subscription as any,
         JSON.stringify({ title: "Tether", body: "I miss you! ❤️" })
       )
     }
