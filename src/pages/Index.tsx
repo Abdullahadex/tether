@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { AnimatePresence, motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { useTether } from "@/hooks/useTether";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
@@ -22,7 +23,9 @@ const Index = () => {
     isPaired,
     isPartnerOnline,
     isPartnerHolding,
+    lastNudgeAt,
     sendHeartbeat,
+    sendNudgeSignal,
     updateSignatureColor,
     updateStatus,
     createTether,
@@ -39,6 +42,11 @@ const Index = () => {
     if (!authLoading && !user) navigate("/auth");
   }, [authLoading, user, navigate]);
 
+  useEffect(() => {
+    if (!lastNudgeAt) return;
+    toast("Your partner sent a nudge.");
+  }, [lastNudgeAt]);
+
   const handleColorSelected = async (color: { hex: string }) => {
     await updateSignatureColor(color.hex);
     localStorage.setItem("tether_color_set", "true");
@@ -46,13 +54,15 @@ const Index = () => {
   };
 
   const sendNudge = useCallback(async () => {
-    if (isPartnerOnline) return; 
     try {
-      await supabase.functions.invoke("send-nudge");
+      await sendNudgeSignal();
+      if (!isPartnerOnline) {
+        await supabase.functions.invoke("send-nudge");
+      }
     } catch (e) {
       console.error("Nudge failed:", e);
     }
-  }, [isPartnerOnline]);
+  }, [isPartnerOnline, sendNudgeSignal]);
 
   if (authLoading || tetherLoading) {
     return (

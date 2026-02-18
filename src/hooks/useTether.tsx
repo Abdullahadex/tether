@@ -11,6 +11,7 @@ export const useTether = () => {
   
   const [isPartnerOnline, setIsPartnerOnline] = useState(false);
   const [isPartnerHolding, setIsPartnerHolding] = useState(false);
+  const [lastNudgeAt, setLastNudgeAt] = useState<number | null>(null);
   const channelRef = useRef<any>(null);
 
   const fetchTether = useCallback(async () => {
@@ -145,6 +146,12 @@ export const useTether = () => {
           navigator.vibrate([100, 50, 100]); 
         }
       })
+      .on('broadcast', { event: 'nudge' }, () => {
+        setLastNudgeAt(Date.now());
+        if ("vibrate" in navigator) {
+          navigator.vibrate([120, 60, 120]);
+        }
+      })
       .on('postgres_changes', { 
         event: 'UPDATE', 
         schema: 'public', 
@@ -210,6 +217,16 @@ export const useTether = () => {
     }
   };
 
+  const sendNudgeSignal = async () => {
+    if (channelRef.current) {
+      await channelRef.current.send({
+        type: 'broadcast',
+        event: 'nudge',
+        payload: { at: new Date().toISOString() }
+      });
+    }
+  };
+
   const updateStatus = async (status: string) => {
     if (!user) return;
     const limited = status.slice(0, 20);
@@ -252,7 +269,9 @@ export const useTether = () => {
     isPaired: !!(tether?.user1_id && tether?.user2_id),
     isPartnerOnline, 
     isPartnerHolding, 
+    lastNudgeAt,
     sendHeartbeat,
+    sendNudgeSignal,
     createTether: async () => {
         const { data: existingPending } = await supabase
           .from("tethers")
