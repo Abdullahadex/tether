@@ -36,7 +36,7 @@ const Index = () => {
 
   const { subscribeToPush, isSubscribed } = usePushNotifications();
 
-  const hasPushEnabled = isSubscribed || (myProfile?.push_subscription !== null);
+  const hasPushEnabled = myProfile?.push_subscription !== null;
 
   const [showColorPicker, setShowColorPicker] = useState(false);
 
@@ -57,17 +57,33 @@ const Index = () => {
 
   const sendNudge = useCallback(async () => {
     try {
-      const deliveredInApp = await sendNudgeSignal();
-      const { error } = await supabase.functions.invoke("send-nudge", {
+      let deliveredInApp = await sendNudgeSignal();
+      if (!deliveredInApp) {
+        await new Promise((resolve) => setTimeout(resolve, 350));
+        deliveredInApp = await sendNudgeSignal();
+      }
+
+      const { data, error } = await supabase.functions.invoke("send-nudge", {
         body: { tetherId: tether?.id ?? null },
       });
-      if (deliveredInApp) {
+
+      const pushDelivered = Boolean(data?.delivered);
+
+      if (deliveredInApp || pushDelivered) {
         toast.success("Nudge sent.");
+      } else if (data?.reason === "Partner has not enabled notifications") {
+        toast.error("Your partner has not enabled notifications yet.");
+      } else if (data?.reason === "No paired partner") {
+        toast.error("You are not paired yet.");
+      } else if (data?.reason === "Expired partner subscription removed" || data?.reason === "Invalid partner subscription removed") {
+        toast.error("Partner notification subscription expired. Ask them to tap Enable Nudges again.");
       } else if (!error) {
         toast.success("Nudge sent. They'll get a notification when they're back.");
       }
+
       if (error) {
         console.error("Push nudge failed:", error);
+        toast.error("Could not send push nudge.");
       }
     } catch (e) {
       console.error("Nudge failed:", e);
@@ -138,7 +154,7 @@ const Index = () => {
                 onClick={subscribeToPush}
                 className="fixed top-12 px-6 py-2 rounded-full bg-white/10 border border-white/20 text-white text-xs uppercase tracking-widest backdrop-blur-md z-50 hover:bg-white/20 transition-colors"
               >
-                Enable Nudges
+                {isSubscribed ? "Sync Nudges" : "Enable Nudges"}
               </button>
             )}
 

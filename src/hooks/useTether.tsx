@@ -237,15 +237,19 @@ export const useTether = () => {
   };
 
   const sendNudgeSignal = async () => {
-    if (!channelRef.current || !channelReadyRef.current) return false;
+    if (!channelRef.current) return false;
 
-    const result = await channelRef.current.send({
+    try {
+      const result = await channelRef.current.send({
         type: 'broadcast',
         event: 'nudge',
         payload: { at: new Date().toISOString() }
       });
 
-    return result === "ok";
+      return result === "ok";
+    } catch {
+      return false;
+    }
   };
 
   const updateStatus = async (status: string) => {

@@ -59,7 +59,7 @@ serve(async (req) => {
     }
 
     if (!tether || !tether.user2_id) {
-      return new Response(JSON.stringify({ success: true, reason: 'No paired partner' }), {
+      return new Response(JSON.stringify({ success: false, delivered: false, reason: 'No paired partner' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
@@ -80,10 +80,11 @@ serve(async (req) => {
           privateKey: Deno.env.get('VAPID_PRIVATE_KEY') ?? '',
         })
 
-        const subscription = partnerProfile.push_subscription as any
-        const endpoint = subscription?.endpoint
-        const auth = subscription?.keys?.auth
-        const p256dh = subscription?.keys?.p256dh
+        const subscription = partnerProfile.push_subscription as Record<string, unknown> | null
+        const endpoint = typeof subscription?.endpoint === "string" ? subscription.endpoint : null
+        const keys = (subscription?.keys as Record<string, unknown> | undefined) ?? undefined
+        const auth = typeof keys?.auth === "string" ? keys.auth : null
+        const p256dh = typeof keys?.p256dh === "string" ? keys.p256dh : null
 
         if (!endpoint || !auth || !p256dh) {
           await supabaseClient
@@ -91,7 +92,7 @@ serve(async (req) => {
             .update({ push_subscription: null })
             .eq('user_id', partnerUserId)
 
-          return new Response(JSON.stringify({ success: true, reason: 'Invalid partner subscription removed' }), {
+          return new Response(JSON.stringify({ success: false, delivered: false, reason: 'Invalid partner subscription removed' }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           })
         }
@@ -113,22 +114,34 @@ serve(async (req) => {
               .from('profiles')
               .update({ push_subscription: null })
               .eq('user_id', partnerUserId)
+            return new Response(JSON.stringify({ success: false, delivered: false, reason: 'Expired partner subscription removed' }), {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            })
           }
+          throw new Error(`Push service failed with status ${statusCode}`)
         }
-      } catch (pushError: any) {
-        const statusCode = pushError?.statusCode ?? pushError?.status_code
+      } catch (pushError: unknown) {
+        const errorWithStatus = pushError as { statusCode?: number; status_code?: number }
+        const statusCode = errorWithStatus?.statusCode ?? errorWithStatus?.status_code
         if (statusCode === 404 || statusCode === 410) {
           await supabaseClient
             .from('profiles')
             .update({ push_subscription: null })
             .eq('user_id', partnerUserId)
+          return new Response(JSON.stringify({ success: false, delivered: false, reason: 'Expired partner subscription removed' }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
         } else {
           throw pushError
         }
       }
+
+      return new Response(JSON.stringify({ success: true, delivered: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
-    return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    return new Response(JSON.stringify({ success: false, delivered: false, reason: 'Partner has not enabled notifications' }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    })
   } catch (error) {
     return new Response(JSON.stringify({ error: error.message }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
   }

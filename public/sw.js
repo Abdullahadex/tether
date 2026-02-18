@@ -7,15 +7,26 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("push", (event) => {
-  const data = event.data?.json() ?? {
+  let data = {
     title: "Tether",
     body: "Your partner sent a nudge! ❤️",
   };
 
+  if (event.data) {
+    try {
+      const parsed = event.data.json();
+      data = {
+        title: parsed?.title ?? data.title,
+        body: parsed?.body ?? data.body,
+      };
+    } catch {
+      const textBody = event.data.text();
+      if (textBody) data.body = textBody;
+    }
+  }
+
   const options = {
     body: data.body,
-    icon: "/icon.png",
-    badge: "/icon.png",
     tag: "nudge",
     renotify: true,
     vibrate: [200, 100, 200],
@@ -28,9 +39,9 @@ self.addEventListener("push", (event) => {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   event.waitUntil(
-    clients.matchAll({ type: "window" }).then((clientList) => {
+    clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
       for (const client of clientList) {
-        if (client.url === "/" && "focus" in client) return client.focus();
+        if ("focus" in client) return client.focus();
       }
       if (clients.openWindow) return clients.openWindow("/");
     }),
