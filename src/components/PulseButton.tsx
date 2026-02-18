@@ -44,6 +44,7 @@ const PulseButton = ({
         onPointerDown={handlePointerDown}
         onPointerUp={handlePointerUp}
         onPointerLeave={handlePointerUp}
+        onPointerCancel={handlePointerUp}
         animate={
           isPartnerHolding
             ? { scale: [1, 1.08, 1], transition: { repeat: Infinity, duration: 0.8, ease: "easeInOut" } }

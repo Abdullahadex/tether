@@ -1,11 +1,13 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import WebPush from 'https://esm.sh/web-push@3.6.7'
+import * as WebPush from "npm:web-push-browser"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
+
+const FALLBACK_VAPID_PUBLIC_KEY = "BHYKN1hf9If62947vIO1K6K5pORWJ2kQMr2CbD-bHrMlvLjJ7zMA6jeBoRS3LO2LW7S51vgSOZJ-nPyarz9-Fjs"
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
@@ -71,17 +73,48 @@ serve(async (req) => {
       .maybeSingle()
 
     if (partnerProfile?.push_subscription) {
-      WebPush.setVapidDetails(
-        'mailto:support@tether.app',
-        "BHYKN1hf9If62947vIO1K6K5pORWJ2kQMr2CbD-bHrMlvLjJ7zMA6jeBoRS3LO2LW7S51vgSOZJ-nPyarz9-Fjs",
-        Deno.env.get('VAPID_PRIVATE_KEY')!
-      )
-
       try {
-        await WebPush.sendNotification(
-          partnerProfile.push_subscription as any,
+        const sendPush = WebPush.sendPushNotification || WebPush.sendNotification
+        const keyPair = await WebPush.deserializeVapidKeys({
+          publicKey: Deno.env.get('VAPID_PUBLIC_KEY') ?? FALLBACK_VAPID_PUBLIC_KEY,
+          privateKey: Deno.env.get('VAPID_PRIVATE_KEY') ?? '',
+        })
+
+        const subscription = partnerProfile.push_subscription as any
+        const endpoint = subscription?.endpoint
+        const auth = subscription?.keys?.auth
+        const p256dh = subscription?.keys?.p256dh
+
+        if (!endpoint || !auth || !p256dh) {
+          await supabaseClient
+            .from('profiles')
+            .update({ push_subscription: null })
+            .eq('user_id', partnerUserId)
+
+          return new Response(JSON.stringify({ success: true, reason: 'Invalid partner subscription removed' }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+
+        const response = await sendPush(
+          keyPair,
+          {
+            endpoint,
+            keys: { auth, p256dh }
+          },
+          "mailto:support@tether.app",
           JSON.stringify({ title: "Tether", body: "I miss you! ❤️" })
         )
+
+        if (!response?.ok) {
+          const statusCode = response?.status
+          if (statusCode === 404 || statusCode === 410) {
+            await supabaseClient
+              .from('profiles')
+              .update({ push_subscription: null })
+              .eq('user_id', partnerUserId)
+          }
+        }
       } catch (pushError: any) {
         const statusCode = pushError?.statusCode ?? pushError?.status_code
         if (statusCode === 404 || statusCode === 410) {
