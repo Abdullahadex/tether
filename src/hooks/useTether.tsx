@@ -175,6 +175,21 @@ export const useTether = () => {
     init();
   }, [user, fetchTether, fetchMyProfile, fetchPartnerProfile]);
 
+  useEffect(() => {
+    if (!user || !tether || tether.user2_id) return;
+
+    const interval = window.setInterval(async () => {
+      const latestTether = await fetchTether();
+      if (latestTether?.user2_id) {
+        await fetchPartnerProfile(latestTether);
+      }
+    }, 3000);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [user, tether, fetchTether, fetchPartnerProfile]);
+
   const sendHeartbeat = (isHolding: boolean) => {
     if (isHolding && "vibrate" in navigator) {
       navigator.vibrate([50]); 
